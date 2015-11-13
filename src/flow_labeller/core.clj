@@ -8,22 +8,11 @@
 
 (require '[clojure.string :as str])
 
-(def working-directory "/home/oblivia/cs/6706-network-design+management/assignments/A2/DARPA/")
-
-;; (def ports-filename "/etc/services")
-
+;; Some handy numerical constants:
 (def tcp 6)
 (def udp 17)
-(def proto-index 4)
+(def proto-index 4) ;; which is also the index at which we'll crop the flow
  
-(defn pathname [filename]
-  (str/join [working-directory filename]))
-
-(defn pathname* [filename]
-  (System/getenv "FLOW_DATA_DIR"))
-
-(def flow-filename (pathname "outside.flow"))
-
 (defn csv->map [csvpath]
   (let [txt (str/split (slurp csvpath) #"[\n,]")]
     (apply hash-map txt)))
@@ -49,7 +38,7 @@
 (defn port-vectorize [the-flows]
   (map
    (fn [x] (vector (min (bigint (nth x p1)) (bigint (nth x p2)))
-                  (bigint (nth x proto-index))))
+                       (bigint (nth x proto-index))))
    the-flows))
 
 (defn map-port
