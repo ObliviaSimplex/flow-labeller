@@ -1,0 +1,2 @@
+java -jar flow-labeller.jar $*
+
