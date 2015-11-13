@@ -1,0 +1,6 @@
+#! /bin/sh
+lein uberjar
+cp target/uberjar/flow-labeller*jar ./flow-labeller.jar
+
+
+
