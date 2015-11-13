@@ -1,0 +1,113 @@
+(ns flow-labeller.core
+  (:gen-class))
+
+;; =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+;; Generates a list of service labels for the flows itemized by flowtbag,
+;; based on port numbers and knowledge of the IP protocol (TCP/UDP).
+;; =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+(require '[clojure.string :as str])
+
+(def working-directory "/home/oblivia/cs/6706-network-design+management/assignments/A2/DARPA/")
+
+(def ports-filename "/etc/services")
+
+(def tcp 6)
+(def udp 17)
+(def proto-index 4)
+ 
+(defn pathname [filename]
+  (str/join [working-directory filename]))
+
+(def flow-filename (pathname "outside.flow"))
+
+(defn csv->map [csvpath]
+  (let [txt (str/split (slurp csvpath) #"[\n,]")]
+    (apply hash-map txt)))
+    
+(def udp-portmap
+  (csv->map (pathname "udp-portlabels.txt")))
+
+(def tcp-portmap
+  (csv->map (pathname "tcp-portlabels.txt")))
+
+(defn get-service-list []
+  (distinct (concat (vals tcp-portmap) (vals udp-portmap))))
+
+  ;;(str/split (slurp (pathname "service-list.txt")) #"\n"))
+
+(def flows
+  (let [flowvec (str/split (slurp flow-filename) #"\n")]
+    (map (fn [x] (str/split x #",")) flowvec)))
+
+(def p1 1)
+(def p2 3)
+
+(def port-vector 
+  (map
+   (fn [x] (vector (min (bigint (nth x p1)) (bigint (nth x p2)))
+                  (bigint (nth x proto-index))))
+   flows))
+
+(defn map-port [pair]
+  (if (= (pair 1) tcp)        ;; check to see if tcp service or udp
+    (tcp-portmap (str (pair 0)))
+    (udp-portmap (str (pair 0)))))
+
+(defn port-mapper [pvec]
+  (map map-port pvec))
+
+(defn print-labels []
+  (doseq [label (port-mapper port-vector)] ;; until tcp label found
+    (prn label)))
+
+(defn spit-labels []
+  (doseq [label (port-mapper port-vector)] ;; until tcp label found
+    (spit "labels.out2" (str/join [label "\n"]) :append true)))
+
+
+;(defn flow-trimmmer [some-flows]
+  ;; todo: have flow-trimmer also delete non-varying fields
+  ;; Excises the IP address, port number, and protocol fields (0-4)
+;  (map (fn [x] (subvec x (+ proto-index 1))) some-flows))
+
+(defn arff-maker [unlabelled-flows]
+  ;; NB: Not quite kosher yet. Weka doesn't like the nominals, for some reason.
+  ;; bug: I generate too many ATTRIBUTE headings
+  (let [labels (port-mapper port-vector)]
+    (let [processed-flows
+          (map (fn [x y] (conj (subvec x (+ proto-index 1)) y)) unlabelled-flows labels)]
+      (do
+        ;; Relation section
+        (print "@RELATION application\n\n")
+        ;; Attributes section
+        ;; First, the numerical fields, to which we give boring names:
+        (loop [n 1, fields (first processed-flows)]
+          (printf "@ATTRIBUTE f%d\tNUMERIC\n" n)
+          (when (seq (rest (rest fields)))
+            (recur (inc n) (rest fields))))
+        ;; Now print the list of services as a set of nominal values
+        (print "@ATTRIBUTE service\t{")
+    (loop [service-list (get-service-list)]
+      (print (first service-list))
+      (when (seq (rest service-list))
+        (print ",")
+        (recur (rest service-list))))
+    (print "}\n\n")
+    
+    ;; Data section
+  
+      (println "@DATA")
+      (doseq [labelled-flow processed-flows]
+        (println (apply str (interpose "," labelled-flow))))))))
+  
+;;(spit-labels)
+
+(defn -main
+  "Prints a list of labels for the flow provided."
+  [& args]
+  (arff-maker flows))
+
+
+
+
