@@ -91,7 +91,8 @@
     (let [processed-flows
           (map (fn [x y] (conj x y))
                (map (fn [x] (subvec x proto-index)) the-flows)
-               (map (fn [x] (min (bigint (the-flows p1)) (bigint (the-flows p2))))))]
+               (map (fn [x] (min (bigint (x p1))
+                                (bigint (x p2)))) the-flows)) ]
       (doseq [pf processed-flows]
         (println (apply str (interpose "," pf)))))))
   
