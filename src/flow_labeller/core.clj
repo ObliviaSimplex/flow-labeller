@@ -9,22 +9,42 @@
 (require '[clojure.string :as str])
 
 ;; Some handy numerical constants:
-(def tcp 6)
-(def udp 17)
+(def tcp "6")
+(def udp "17")
 (def proto-index 4) ;; which is also the index at which we'll crop the flow
- 
-(defn csv->map [csvpath]
-  (let [txt (str/split (slurp csvpath) #"[\n,]")]
-    (apply hash-map txt)))
-    
-(def udp-portmap
-  (csv->map (pathname "udp-portlabels.txt")))
 
-(def tcp-portmap
-  (csv->map (pathname "tcp-portlabels.txt")))
+(def p1 1)
+(def p2 3)
 
-(defn get-service-list []
-  (distinct (concat (vals tcp-portmap) (vals udp-portmap))))
+(def DEFAULTPATH "/home/oblivia/cs/6706-network-design+management/assignments/A2/DARPA/outside.flow") ;; for testing
+
+;;
+(def service-map
+  (let [servvecs
+        (let [servlist (str/split (slurp "/etc/services") #"\n")]
+          (map (fn [z] (conj  [(str/split (second z) #"/")] (first z)))
+               (map (fn [y] (str/split y #"\s+"))
+                    (filter (fn [x] (not (= "" x))) 
+                            (map (fn [x] (str/replace x #"#.*" "")) 
+                                 servlist)))))]
+    (into {} servvecs)))
+
+(defn serv-key
+  "Gets service-maps key corresponding to a flow."
+  [flow]
+  (let [proto (if (= (flow proto-index) tcp) "tcp" "udp")
+        port (str (min (bigint (nth flow p1)) (bigint (nth flow p2))))]
+    [port proto]))
+
+(defn lookup-service
+  "Takes a flow as argument, and returns the name of its service,
+  as a string."
+  [flow]
+  (service-map (serv-key flow)))
+
+(defn service-lister
+  [the-flows]
+  (map lookup-service the-flows))
 
 (defn flows
   "Grabs flows from flow file."
@@ -32,31 +52,12 @@
   (let [flowvec (str/split (slurp flow-filename) #"\n")]
    (map (fn [x] (str/split x #",")) flowvec)))
 
-(def p1 1)
-(def p2 3)
-
-(defn port-vectorize [the-flows]
-  (map
-   (fn [x] (vector (min (bigint (nth x p1)) (bigint (nth x p2)))
-                       (bigint (nth x proto-index))))
-   the-flows))
-
-(defn map-port
-  "Maps port numbers to their corresponding services, after checking to see 
-  whether their flow is labelled as TCP or UDP."
-  [pair]
-  (if (= (pair 1) tcp)        ;; check to see if tcp service or udp
-    (tcp-portmap (str (pair 0)))
-    (udp-portmap (str (pair 0)))))
-
-(defn port-mapper [pvec]
-  (map map-port pvec))
-
 (defn arff-maker 
   "Generates an arff file that is readable by Weka."
   [flow-filename tidy-attributes]
   ;; if tidy-attributes = 1, then list only used attrs in the header
-  (let [the-flows (flows flow-filename) labels (port-mapper (port-vectorize the-flows))]
+  (let [the-flows (flows flow-filename)
+        labels (service-lister the-flows)]
     (let [processed-flows
           (map (fn [x y] (conj (subvec x (+ proto-index 1)) y)) the-flows labels)]
       (do
@@ -72,7 +73,7 @@
         (print "@ATTRIBUTE service\t{")
         (loop [service-list (if tidy-attributes
                               (distinct labels)
-                              (get-service-list))]
+                              (vals service-map))]
       (print (first service-list))
       (when (seq (rest service-list))
         (print ",")
@@ -90,7 +91,7 @@
     (let [processed-flows
           (map (fn [x y] (conj x y))
                (map (fn [x] (subvec x proto-index)) the-flows)
-               (map (fn [x] (x 0)) (port-vectorize the-flows)))]
+               (map (fn [x] (min (bigint (the-flows p1)) (bigint (the-flows p2))))))]
       (doseq [pf processed-flows]
         (println (apply str (interpose "," pf)))))))
   
@@ -105,6 +106,7 @@
       "efs"
       (efs-prepper flowpath)
       (println "Usage: java -jar <path to flow file> <format> ['tidy']\nWhere format is arff or efs."))))
+
 
 
 
