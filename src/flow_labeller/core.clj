@@ -156,7 +156,9 @@
             "efs"
             (efs-prepper flowpath test-rat)
             ;; default
-            (println "Usage: java -jar flow-labeller.jar <-f path to flow file> <-o arff|efs> <-r ratio-to-separate-as-training-set> <-t 1|0 (1 to tidy up arff header>")))))
+            (println "USAGE: java -jar flow-labeller.jar <-f path to flow file> \\"
+                     "\n<-o arff|efs> <-r ratio-to-separate-as-training-set> \\"
+                     "\n<-t 1|0 (1 to tidy up arff header>")))))
 
 
 
