@@ -16,7 +16,7 @@
 (def p1 1)
 (def p2 3)
 
-(def DEFAULTPATH "/home/oblivia/cs/6706-network-design+management/assignments/A2/DARPA/sample_data01.flow") ;; for testing
+(def DEFAULTPATH "/home/oblivia/cs/6706-network-design+management/assignments/A2/DARPA/testing/tiny.flow") ;; for testing
 
 ;; Slups up /etc/services and turns it into a usable map associating
 ;; [port ip_protocol] string pairs with service names. 
@@ -43,6 +43,12 @@
   [flow]
   (service-map (serv-key flow)))
 
+(defn label-flows
+  [the-flows]
+  (map (fn [fl] (conj fl (lookup-service fl))) (filter (fn [f] (lookup-service f)) the-flows)))
+;; must be a more efficient way!
+
+
 (defn service-lister
   [the-flows]
   (map lookup-service the-flows))
@@ -60,8 +66,6 @@
 
 (defn NOP2 [number somelist]
   somelist)
-                                        ;
-                                        ;(map (fn [x] (spit filename x :append true)) s))
 
 ;; pretty inefficient to be opening and closing the file with each spit.
 ;; figure out how to keep it open and close it at the end.
@@ -70,95 +74,99 @@
   "Generates an arff file that is readable by Weka."
   [flow-filename tidy-attributes rat]
   ;; if tidy-attributes = 1, then list only used attrs in the header
-  (let [the-flows (flows flow-filename)
+  (let [the-flows (label-flows (flows flow-filename))
         labels (service-lister the-flows)]
     (doseq [splitter
             (if rat
-              [{:suff (str ".trainer." (numerator rat) "." (denominator rat))
+              [{:suff (str ".trainer." (numerator rat) "-"
+                           (denominator rat))
                 :num (int (* (count the-flows) rat))
                 :op take}
-               {:suff (str ".tester." (numerator (- 1 rat)) "." (denominator (- 1 rat)))
+               {:suff (str ".tester." (numerator (- 1 rat)) "-"
+                           (denominator (- 1 rat)))
                 :op drop
                 :num (int (* (count the-flows) rat))}]
-               [{:suff ""
-                 :num 0
-                 :op NOP2}])]
+              [{:suff ""
+                :num 0
+                :op NOP2}])]
       (let [out (str flow-filename (splitter :suff)
                      (if tidy-attributes ".tidy" "")
                      ".arff")]
-                (let [processed-flows
-                      (map (fn [x y] (conj (subvec x (+ proto-index 1)) y)) the-flows labels)]
-                  (do
-                    ;; Relation section
-                    (writeout out "@RELATION application\n\n")
-                    ;; Attributes section
-                    ;; First, the numerical fields, to which we give boring names:
-                    (loop [n 1, fields (first processed-flows)]
-                      (writeout out "@ATTRIBUTE f" n "\tNUMERIC\n")
-                      (when (seq (rest (rest fields)))
-                        (recur (inc n) (rest fields))))
-                    ;; Now print the list of services as a set of nominal values
-                    (writeout out "@ATTRIBUTE service\t{")
-                    (loop [service-list (if tidy-attributes
-                                          (distinct labels)
-                                          (vals service-map))]
-                      (writeout out (first service-list))
-                      (when (seq (rest service-list))
-                        (writeout out ",")
-                        (recur (rest service-list))))
-                    (writeout out "}\n\n")
-                    ;; Data section
-                    (writeout out "@DATA\n")
-                    ;; if splitting off testing and training arffs, do it here.
-                    (doseq [labelled-flow ((splitter :op) (splitter :num) processed-flows)]
-                      (writeout out (apply str (interpose "," labelled-flow)) "\n" ))))
-                (println "ARFF file saved as " out)))))
+        (let [processed-flows
+              (map (fn [x] (subvec x (+ proto-index 1))) the-flows )]
+          (do
+            ;; Relation section
+            (writeout out "@RELATION application\n\n")
+            ;; Attributes section
+            ;; First, the numerical fields, to which we give boring names:
+            (loop [n 1, fields (first processed-flows)]
+              (writeout out "@ATTRIBUTE f" n "\tNUMERIC\n")
+              (when (seq (rest (rest fields)))
+                (recur (inc n) (rest fields))))
+            ;; Now print the list of services as a set of nominal values
+            (writeout out "@ATTRIBUTE service\t{")
+            (loop [service-list (if tidy-attributes
+                                  (distinct labels)
+                                  (vals service-map))]
+              (writeout out (first service-list))
+              (when (seq (rest service-list))
+                (writeout out ",")
+                (recur (rest service-list))))
+            (writeout out "}\n\n")
+            ;; Data section
+            (writeout out "@DATA\n")
+            ;; if splitting off testing and training arffs, do it here.
+            (doseq [labelled-flow ((splitter :op) (splitter :num) processed-flows)]
+              (writeout out (apply str (interpose "," labelled-flow)) "\n" ))))
+        (println "ARFF file saved as " out)))))
 
-    (defn efs-prepper
-      "Formats the flows so that they can be processed by EFS."
-      [flowpath rat]
-      (let [the-flows (flows flowpath)]
-        (doseq [splitter
-                (if rat
-                  [{:suff (str ".trainer." (numerator rat) "." (denominator rat) ".efs")
-                    :num (int (* (count the-flows) rat))
-                    :op take}
-                   {:suff (str ".tester." (numerator (- 1 rat)) "." (denominator (- 1 rat)) ".efs")
-                    :num (int (* (count the-flows) rat))
-                    :op drop}]
-                  [{:suff ".efs"
-                    :num 0
-                    :op NOP2}])]      
-          (let [out (str flowpath (splitter :suff))
-                processed-flows
-                ((splitter :op) (splitter :num)
-                 (map (fn [x y] (conj x y))
-                      (map (fn [x] (subvec x proto-index)) the-flows)
-                      (map (fn [x] (min (bigint (x p1))
-                                       (bigint (x p2)))) the-flows))) ]
-            (doseq [pf processed-flows]
-              (writeout out (apply str (interpose "," pf)) "\n" ))
-          (println "Saved EFS format to " out)))))
-      
-    (defn -main
-      "Prints a list of labels for the flow provided."
-      [& args]
-      (let [options (apply hash-map args)]
-        (let [flowpath (options "-f")
-              tidy (options "-t")
-              test-rat (if (options "-r")
-                         (read-string (options "-r"))
-                         nil)
-              output (options "-o")]
-          (case output
-            "arff"
-            (arff-maker flowpath tidy test-rat)
-            "efs"
-            (efs-prepper flowpath test-rat)
-            ;; default
-            (println "USAGE: java -jar flow-labeller.jar <-f path to flow file> \\"
-                     "\n<-o arff|efs> <-r ratio-to-separate-as-training-set> \\"
-                     "\n<-t 1|0 (1 to tidy up arff header>")))))
+(defn efs-prepper
+  "Formats the flows so that they can be processed by EFS."
+  [flowpath rat]
+  (let [the-flows (flows flowpath)]
+    (doseq [splitter
+            (if rat
+              [{:suff (str ".trainer." (numerator rat) "-"
+                           (denominator rat) ".efs")
+                :num (int (* (count the-flows) rat))
+                :op take}
+               {:suff (str ".tester." (numerator (- 1 rat)) "-"
+                           (denominator (- 1 rat)) ".efs")
+                :num (int (* (count the-flows) rat))
+                :op drop}]
+              [{:suff ".efs"
+                :num 0
+                :op NOP2}])]      
+      (let [out (str flowpath (splitter :suff))
+            processed-flows
+            ((splitter :op) (splitter :num)
+             (map (fn [x y] (conj x y))
+                  (map (fn [x] (subvec x proto-index)) the-flows)
+                  (map (fn [x] (min (bigint (x p1))
+                                   (bigint (x p2)))) the-flows))) ]
+        (doseq [pf processed-flows]
+          (writeout out (apply str (interpose "," pf)) "\n" ))
+        (println "Saved EFS format to " out)))))
+
+(defn -main
+  "Prints a list of labels for the flow provided."
+  [& args]
+  (let [options (apply hash-map args)]
+    (let [flowpath (options "-f")
+          tidy (options "-t")
+          test-rat (if (options "-r")
+                     (read-string (options "-r"))
+                     nil)
+          output (options "-o")]
+      (case output
+        "arff"
+        (arff-maker flowpath tidy test-rat)
+        "efs"
+        (efs-prepper flowpath test-rat)
+        ;; default
+        (println "USAGE: java -jar flow-labeller.jar <-f path to flow file> \\"
+                 "\n<-o arff|efs> <-r ratio-to-separate-as-training-set> \\"
+                 "\n<-t 1|0 (1 to tidy up arff header>")))))
 
 
 
